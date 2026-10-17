@@ -1,0 +1,23 @@
+# Python 虛擬環境 (絕對禁止上傳)
+.venv/
+venv/
+ENV/
+env/
+
+# Python 編譯暫存與快取
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# 環境變數與機敏金鑰
+.env
+.env.local
+.env.*.local
+
+# 雲端建置與編輯器暫存
+.vercel
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
