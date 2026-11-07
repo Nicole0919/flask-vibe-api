@@ -25,7 +25,7 @@ def handle_http_error(error):
 def health_check():
     return make_response(
         "success",
-        "服務運作正常",
+        "服務運作正常很棒",
         {"status": "running", "timestamp": datetime.now(timezone.utc).isoformat()},
         200,
     )
