@@ -447,6 +447,12 @@ class Income(db.Model):
         nullable=True,
         unique=True,
     )
+    trade_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("trades.id", ondelete="RESTRICT"),
+        nullable=True,
+        unique=True,
+    )
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -467,6 +473,10 @@ class Income(db.Model):
     )
     invoice = db.relationship(
         "Invoice",
+        backref=db.backref("income", uselist=False, lazy="select", passive_deletes="all"),
+    )
+    trade = db.relationship(
+        "Trade",
         backref=db.backref("income", uselist=False, lazy="select", passive_deletes="all"),
     )
 
@@ -501,12 +511,277 @@ class Income(db.Model):
             "source": self.source,
             "note": self.note,
             "invoice_id": self.invoice_id,
+            "trade_id": self.trade_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
     def __repr__(self) -> str:
         return f"<Income {self.id}: {self.amount} {self.currency} on {self.received_on}>"
+
+
+class ExpenseCategory(db.Model):
+    __tablename__ = "expense_categories"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=func.timezone("utc", func.now()),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<ExpenseCategory {self.id}: {self.name}>"
+
+
+class Expense(db.Model):
+    __tablename__ = "expenses"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    spent_on = db.Column(db.Date, nullable=False)
+    settled_on = db.Column(db.Date, nullable=True)
+    amount = db.Column(db.Numeric(16, 4), nullable=False)
+    currency = db.Column(db.String(3), nullable=False)
+    fx_rate_to_twd = db.Column(db.Numeric(12, 6), nullable=False)
+    category_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("expense_categories.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    merchant = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    invoice_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=func.timezone("utc", func.now()),
+    )
+
+    category = db.relationship(
+        "ExpenseCategory", backref=db.backref("expenses", lazy="select")
+    )
+    account = db.relationship(
+        "Account", backref=db.backref("expenses", lazy="select")
+    )
+    invoice = db.relationship(
+        "Invoice",
+        backref=db.backref("expenses", lazy="select", passive_deletes="all"),
+    )
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "amount > 0",
+            name="ck_expenses_amount_positive",
+        ),
+        db.CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="ck_expenses_currency",
+        ),
+        db.CheckConstraint(
+            "fx_rate_to_twd > 0",
+            name="ck_expenses_fx_rate_positive",
+        ),
+        db.CheckConstraint(
+            "merchant IS NOT NULL OR note IS NOT NULL",
+            name="ck_expenses_merchant_or_note_not_null",
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "spent_on": self.spent_on.isoformat() if self.spent_on else None,
+            "settled_on": self.settled_on.isoformat() if self.settled_on else None,
+            "amount": float(self.amount) if self.amount is not None else 0.0,
+            "currency": self.currency,
+            "fx_rate_to_twd": float(self.fx_rate_to_twd) if self.fx_rate_to_twd is not None else 1.0,
+            "category_id": self.category_id,
+            "account_id": self.account_id,
+            "merchant": self.merchant,
+            "note": self.note,
+            "invoice_id": self.invoice_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<Expense {self.id}: {self.amount} {self.currency} on {self.spent_on}>"
+
+
+class Instrument(db.Model):
+    __tablename__ = "instruments"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    market = db.Column(db.String(20), nullable=False)
+    symbol = db.Column(db.String(20), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    currency = db.Column(db.String(3), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=func.timezone("utc", func.now()),
+    )
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "market IN ('tw_stock', 'us_stock', 'fund', 'other')",
+            name="ck_instruments_market",
+        ),
+        db.CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="ck_instruments_currency",
+        ),
+        db.UniqueConstraint(
+            "market", "symbol",
+            name="uq_instruments_market_symbol",
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "market": self.market,
+            "symbol": self.symbol,
+            "name": self.name,
+            "currency": self.currency,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<Instrument {self.id}: {self.market}:{self.symbol} ({self.name})>"
+
+
+class Trade(db.Model):
+    __tablename__ = "trades"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    instrument_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("instruments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    trade_type = db.Column(db.String(30), nullable=False)
+    traded_on = db.Column(db.Date, nullable=False)
+    quantity = db.Column(db.Numeric(16, 4), nullable=True)
+    price = db.Column(db.Numeric(16, 4), nullable=True)
+    cash_amount = db.Column(db.Numeric(16, 4), nullable=True)
+    ratio = db.Column(db.Numeric(12, 6), nullable=True)
+    fee = db.Column(db.Numeric(16, 4), nullable=True)
+    tax = db.Column(db.Numeric(16, 4), nullable=True)
+    currency = db.Column(db.String(3), nullable=False)
+    fx_rate_to_twd = db.Column(db.Numeric(12, 6), nullable=False)
+    voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=func.timezone("utc", func.now()),
+    )
+
+    instrument = db.relationship(
+        "Instrument", backref=db.backref("trades", lazy="select")
+    )
+    account = db.relationship(
+        "Account", backref=db.backref("trades", lazy="select")
+    )
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "trade_type IN ('buy', 'sell', 'cash_dividend', 'stock_dividend', 'drip', 'split', 'merge', 'capital_reduction')",
+            name="ck_trades_trade_type",
+        ),
+        db.CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="ck_trades_currency",
+        ),
+        db.CheckConstraint(
+            "fx_rate_to_twd > 0",
+            name="ck_trades_fx_rate_positive",
+        ),
+        db.CheckConstraint(
+            "fee IS NULL OR fee >= 0",
+            name="ck_trades_fee_non_negative",
+        ),
+        db.CheckConstraint(
+            "tax IS NULL OR tax >= 0",
+            name="ck_trades_tax_non_negative",
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "instrument_id": self.instrument_id,
+            "account_id": self.account_id,
+            "trade_type": self.trade_type,
+            "traded_on": self.traded_on.isoformat() if self.traded_on else None,
+            "quantity": float(self.quantity) if self.quantity is not None else None,
+            "price": float(self.price) if self.price is not None else None,
+            "cash_amount": float(self.cash_amount) if self.cash_amount is not None else None,
+            "ratio": float(self.ratio) if self.ratio is not None else None,
+            "fee": float(self.fee) if self.fee is not None else None,
+            "tax": float(self.tax) if self.tax is not None else None,
+            "currency": self.currency,
+            "fx_rate_to_twd": float(self.fx_rate_to_twd) if self.fx_rate_to_twd is not None else 1.0,
+            "voided_at": self.voided_at.isoformat() if self.voided_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"<Trade {self.id}: {self.trade_type} instrument {self.instrument_id} "
+            f"on {self.traded_on}>"
+        )
 
 
 __all__ = [
@@ -518,4 +793,8 @@ __all__ = [
     "DrawPrize",
     "IncomeCategory",
     "Income",
+    "ExpenseCategory",
+    "Expense",
+    "Instrument",
+    "Trade",
 ]
