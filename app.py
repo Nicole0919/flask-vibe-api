@@ -40,6 +40,10 @@ def create_app() -> Flask:
 
     db.init_app(app)
 
+    from routes import api_bp
+
+    app.register_blueprint(api_bp)
+
     @app.errorhandler(404)
     def handle_not_found(error):
         return make_response(404, "找不到這一筆", None)
